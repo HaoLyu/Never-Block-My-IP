@@ -1,5 +1,5 @@
-# process
-# requests model
+# Check whether the author's Twitter homepage exists
+# Update a field 'exist' to each author. 0 means 'not exist', 1 means 'exist'
 import requests
 import sys
 import operator
@@ -8,34 +8,37 @@ from pymongo import MongoClient
 import datetime
 from multiprocessing import Process, Queue
 from multiprocessing import Pool
-
+import random
+import time
 # Load the data into mongodb
 client = MongoClient('127.0.0.1', 27017)
 db = client['IronyHQ']
 dbtweets = db.tweets
+test_number =  dbtweets.find({'$and':[{'hist_list' : {'$exists': False}}, {'exist' : {'$exists': False}}]}).count()
 
-qury = dbtweets.find({'$and': [{'following_list' : {'$exists': False}}, {'following_count' : {'$exists': True}}]})
-print "total left is %d"%(qury.count())
+
+#test_number = dbtweets.find({'hist_list' : {'$exists': False}}).count()
+
+print 'total left empty authors count is: ', test_number
 count = Queue()
-for i in range(qury.count()):
+#for i in range(dbtweets.find({'hist_list' : {'$exists': False}}).count()):
+for i in range(test_number):	
 	count.put(i)
+
 
 queue = Queue()
 
-#for i in range(dbtweets.find({'following_list' : {'$exists': False}}).count()):
-for i in range(10000):
+
+#for i in range(dbtweets.find({'hist_list' : {'$exists': False}}).count()):
+for i in range(test_number):	
 	try:
-		#one_doc = [dbtweets.find({'following_list' : {'$exists': False}})[i]['tweet_id'],
-		#			dbtweets.find({'following_list' : {'$exists': False}})[i]['following_count'], 
-		#			dbtweets.find({'following_list' : {'$exists': False}})[i]['author_full_name']
-		#			]
-		one_doc = [qury[i]['tweet_id'],
-					qury[i]['following_count'], 
-					qury[i]['author_full_name']
+		one_doc = [dbtweets.find({'$and':[{'hist_list' : {'$exists': False}}, {'exist' : {'$exists': False}}]})[i]['tweet_id'], 
+					dbtweets.find({'$and':[{'hist_list' : {'$exists': False}}, {'exist' : {'$exists': False}}]})[i]['author_full_name']
 					]
+
 		#print "this is No.%d" %i + " Doc: ", one_doc
 		queue.put_nowait(one_doc)
-		
+		#print one_doc
 	except Exception:
 		continue
 
@@ -59,11 +62,13 @@ payload = { 'session[username_or_email]': 'irony_research',
 r = requests.post(url, data=payload)
 
 proxies = {
-	"http": "http://96.5.28.23:8008",
-	"http": "http://64.26.95.14:8008",
-	"http": "http://107.151.152.218:80", 
-	"http": "http://107.151.152.210:80",
-	"http": "http://159.203.71.65:80"
+	
+	"http": "http://192.99.54.110:80",
+	"http": "http://192.99.54.41:8080", 
+	"http": "http://207.96.132.67:80",
+	"http": "http://216.113.14.15:8000",
+	"http": "http://50.30.152.130:8086"
+	
 }
 
 
@@ -97,95 +102,56 @@ headers = [{
 # set start time
 start_time = datetime.datetime.now()
 
- 
-test_count = 0
-
 def foo(key):
-	#print '***************'
-	global test_count
+	print '***************'
 	#print 'test_count %d' % test_count
-
-	client_no = test_count%3
+	client_no = random.randint(0,2)
 	tweet_id = key[0]
-	user_screen_name = key[2]
-	f_count = key[1]
-	f_list = []
-	#print "user is", user_screen_name, 'has so many following', f_count
-	
-	if f_count > 0:
-		try:
-			get_url = "https://twitter.com/" + user_screen_name + "/following"
-			p = requests.get(get_url, headers=headers[client_no], proxies=proxies)
-				
-			soup = BeautifulSoup(p.content,  "lxml")
+	user_screen_name = key[1]
 
-			jstt = soup.find("div", {"class": "GridTimeline"}).find("div", {"class": "GridTimeline-items"})
-			#print jstt['data-min-position']
-
-			start_position = str(jstt['data-min-position'])
-			first_jstt = soup.find_all("a",{"class":"ProfileCard-screennameLink u-linkComplex js-nav"})
-			for one in first_jstt:
-				insert = (one.text).strip().replace('@','')
-				f_list.append(insert)
-			try: 
-				#print "No %d user %s is under inputing %s :" %(test_count+1, user_screen_name, str(f_count))
-
-				while(start_position != '0'):
-					one_url = 'https://twitter.com/' + user_screen_name + '/following/users?include_available_features=1&include_entities=1&max_position=' + start_position + '&reset_error_state=false'
-					params = {
-							'include_available_features': '1',
-							'include_entities': '1',
-							'max_position': start_position, 
-							'reset_error_state': 'false'
-							}
-
-					response = requests.get(one_url, params=params, headers=headers[client_no], proxies=proxies)
-
-					fixtures = response.json()
-					start_position = fixtures['min_position']
-					soup2 = BeautifulSoup(fixtures['items_html'], "lxml")
-					jstt2 = soup2.find_all("div", {"class": "ProfileCard  js-actionable-user"})
-					for one_fol in jstt2:
-						f_list.append(one_fol['data-screen-name'])
-
-				result = dbtweets.update_one({"tweet_id": tweet_id},
-						{
-						    "$set": {
-				                "following_list": f_list
-				        	}
-						}
-					)	
-
+	try:
+		get_url = "https://twitter.com/" + user_screen_name 
+		p = requests.get(get_url, headers=headers[client_no], proxies=proxies)
 			
-		
-			except Exception, e:
-				print 'error %s' %e
-				return
-			test_count += 1
-			print "No %d user %s inputed %s :" %(count.get_nowait(), user_screen_name, str(f_count))
-		except AttributeError:
-			return
-
-	else: 
+		soup = BeautifulSoup(p.content,  "lxml")
+		jstt = soup.find("div", {"id": "timeline"}).find("div", {"class": "stream-container  "})
+		start_position = str(jstt['data-min-position'])
+		new_jstt = soup.find("div", {"id": "timeline"}).find_all("p")
+			
+		result = dbtweets.update_one({"tweet_id": tweet_id},
+					{
+					    "$set": {
+			                "exist": 1
+			        	}
+					}
+				)
+			
+	except AttributeError:
+		result = dbtweets.update_one({"tweet_id": tweet_id},
+					{
+					    "$set": {
+			                "exist": 0
+			        	}
+					}
+				)
 		return
-	#print f_list
-	pass
+	except Exception,e:
+		print 'type %s and text %s and author is %s'%(type(e), e, user_screen_name)
+		return
+	
+	return
 
 def many_foos():
-	
+	wait_times = 0
 	while(not(queue.empty())):
+		wait_times += 1
+		if wait_times%50 == 0:
+			sleep_time = random.randint(1,4)
+			time.sleep(sleep_time)
 		foo(queue.get_nowait())
 
 
-process_num = 4
-
-p = Pool(process_num)
-for i in range(process_num):
-	p.apply_async(many_foos, args=())
-p.close()
-p.join()
-
+many_foos()
 end_time = datetime.datetime.now()
 duration = end_time - start_time
-
 print " total time is ", duration
