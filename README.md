@@ -10,4 +10,4 @@ Twitter Crawler
 * Avg tweet per day
 
 # Who you can find
-one Twitter user or thousands of users. Require his/her/their use account nme
+one Twitter user or thousands of users. Require his/her/their user account names
