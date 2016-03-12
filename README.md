@@ -28,7 +28,7 @@ To use the code, git clone the repository first
 ##Example of usage
 
 To run crawler on raw text input with tweet_id,author_full_name per line (e.g. on the
-sample_input.txt):
+example_input.txt):
 
 Extract timeline tweets of users
 ```
@@ -36,11 +36,22 @@ Extract timeline tweets of users
 ```
 
 The output file will be "output.csv" in the same directory as
-"sample_input.txt".
+"example_input.txt".
 
 Other usage
 ```
 > python crawl_basic_profile.py example_input.txt output_basic_profile.csv 
 > python crawl_user_followers.py example_input.txt output_user_followers.csv 
 ```
+
+##Author
+Hao Lyu, University of Texas at Austin. lyuhao@utexas.edu
+
+
+
+
+
+
+
+
 
