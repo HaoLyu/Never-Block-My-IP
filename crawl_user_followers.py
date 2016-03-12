@@ -1,7 +1,6 @@
 # Author: Hao Lyu, UT Austin
-# Run the script: Python crawl_hist_tweets.py example_input.csv output.csv
-# Run the check mode: Python crawl_hist_tweets.py example_input.csv output.csv -check
-# Search based on example_input.csv and generate output.csv file in the same folder
+# Run the script: Python crawl_basic_profile.py example_input.csv output_user_followers.csv
+# Search based on example_input.csv and generate output_user_followers.csv file in the same folder
 import requests
 import sys
 import operator
@@ -11,7 +10,13 @@ from Queue import Queue
 import random
 import time
 import csv
-import check_missed_data 
+import urllib
+import re
+import string
+import datetime
+import re
+import json
+import string
 
 input_file = sys.argv[1]
 output_file = sys.argv[2]
@@ -41,7 +46,7 @@ error_list = []
 # Load the output file
 if not os.path.isfile(output_file):
 	with open(output_file,'a+') as o:
-		output_keys = ['tweet_id','author_full_name','hist_list']
+		output_keys = ['tweet_id', 'author_full_name', 'followers_list']
 		w = csv.DictWriter(o, output_keys)
 		w.writeheader()
 else:
@@ -93,78 +98,57 @@ headers = {
 
 # Crawl one user's tweet using its name
 def single_crawler(key):
-	global recorded_dict
 	global error_list
-
 	tweet_id = key[0]
 	user_screen_name = key[1]
 
-	if user_screen_name in recorded_dict:
-		return 
-
-	hist_list = []
+	followers_list = []
 	request_times = 0
 	
 	try:
-		# Extract the tweets in the homepage of the user
-		get_url = "http://twitter.com/" + user_screen_name 
+		get_url = "https://twitter.com/" + user_screen_name + "/followers"
 		p = requests.get(get_url, headers=headers)			
 		soup = BeautifulSoup(p.content,  "lxml")
-		jstt = soup.find("div", {"id": "timeline"}).find("div", {"class": "stream-container  "})
+		jstt = soup.find("div", {"class": "GridTimeline"}).find("div", {"class": "GridTimeline-items"})
+
 		start_position = str(jstt['data-min-position'])
-		new_jstt = soup.find("div", {"id": "timeline"}).find_all("p")
+		first_jstt = soup.find_all("a",{"class":"ProfileCard-screennameLink u-linkComplex js-nav"})
+		for one in first_jstt:
+			insert = (one.text).strip().replace('@','').encode('utf-8')
+			followers_list.append(insert)
 
-		for one in new_jstt:
-			hist_list.append(one.text)
-
-		# Repetitively crawl user historical tweets and extract them
-		while(start_position != None):
-			if request_times >= 20:
-				request_times = 0
-				sleep_time = random.randint(1,4)
-				time.sleep(sleep_time)
-
-			one_url = 'http://twitter.com/i/profiles/show/' + user_screen_name + '/timeline?include_available_features=1&include_entities=1&last_note_ts=123&max_position=' + start_position + '&reset_error_state=false'
+		while(start_position != '0'):
+			one_url = 'https://twitter.com/' + user_screen_name + '/followers/users?include_available_features=1&include_entities=1&max_position=' + start_position + '&reset_error_state=false'
 			params = {
 					'include_available_features': '1',
 					'include_entities': '1',
 					'max_position': start_position, 
-					'reset_error_state': 'false',
-					'last_note_ts': 123
+					'reset_error_state': 'false'
 					}
-
 			response = requests.get(one_url, params=params, headers=headers)
-			request_times += 1
-			fixtures =  response.json()
-
-			if 'inner' in fixtures.keys():
-				fixtures = (response.json())['inner']
-
+			fixtures = response.json()
 			start_position = fixtures['min_position']
 			soup2 = BeautifulSoup(fixtures['items_html'], "lxml")
-			jstt2 = soup2.find_all("p", {"lang": "en"})
+			jstt2 = soup2.find_all("div", {"class": "ProfileCard  js-actionable-user"})
 
 			for one_fol in jstt2:
-				hist_list.append(one_fol.text)
-
-			if len(hist_list)>999:
+				followers_list.append(one_fol['data-screen-name'].encode('utf-8'))
+			
+			# Default the number of max followers is 999
+			if len(followers_list)>999:
 				break
-				
-		print "No %d user %s inputs %d tweets:" %(count.get_nowait(), user_screen_name, len(hist_list))		
-		output_keys = data.keys()+['hist_list']	
 
+		output_keys = ['tweet_id', 'author_full_name', 'followers_list']	
 		with open(output_file,'a') as o:
 			w = csv.DictWriter(o, output_keys)
 			w.writerow({'tweet_id':tweet_id, 
-		    				'author_full_name':user_screen_name,
-		    				'hist_list': hist_list
+		    				'author_full_name': user_screen_name,
+		    				'followers_list': followers_list
 		    				})
-		
-		recorded_dict[user_screen_name] = 1
 
 	except Exception,e:
+		print 'type %s and text %s and author is %s'%(type(e), e, user_screen_name)
 		error_list.append(key)
-		print 'error in crawling author %s'%(user_screen_name)
 		return
 	
 	return
@@ -173,7 +157,7 @@ def crawl_all_data():
 	wait_times = 0
 	while(not(queue.empty())):
 		wait_times += 1
-		if wait_times%5 == 0:
+		if wait_times%50 == 0:
 			sleep_time = random.randint(1,4)
 			time.sleep(sleep_time)
 
@@ -181,46 +165,33 @@ def crawl_all_data():
 
 def check_error_data():
 	wait_times = 0
-	max_try_times = 3*len(error_list)
 
 	while(len(error_list)>0):
 		wait_times += 1
-
-		if wait_times > max_try_times:
-			break
-		if wait_times%5 == 0:
+		if wait_times%50 == 0:
 			sleep_time = random.randint(1,4)
 			time.sleep(sleep_time)
 
-		single_crawler(error_list.pop(0))
+		single_crawler(error_list.pop())
+
 	print "There are %d authors who are not existed or protected"%(len(error_list))
 	print "They are: "
 	left_list = [names[1] for names in error_list]
+
 	for name in left_list:
 		print 'left_list',
 
-try:
-	if sys.argv[3] == '-check':
-		missed_data = check_missed_data.check_missed_data(input_file, output_file)
-		for key in missed_data:
-			single_crawler(key)
-		print 'error_list has %d authors'%(len(error_list))
-		check_error_data()
+# Example input		
+#single_crawler(['545163607366184960','ThisIsArtful'])
+#single_crawler(['410439170067152896','RealJoshJacobs'])
 
-	else:
-		'Wrong arguments input, try again'
-
-except IndexError:
-	crawl_all_data()
-	print 'error list has %d users'%(len(error_list))
-	if len(error_list)!=0:
+crawl_all_data()
+print 'error list has %d users'%(len(error_list))
+if len(error_list)!=0:
 		print 'wait 1min and recrawl users in the error list'
 		sleep_time = random.randint(50,90)
 		time.sleep(sleep_time)
 		check_error_data()
-	else:
-		print 'Work is done'
+else:
+	print 'Work is done'
 
-#Example
-#single_crawler(['545163607366184960','ThisIsArtful'])
-#single_crawler(['410439170067152896','RealJoshJacobs'])
